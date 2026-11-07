@@ -130,8 +130,35 @@ final class MemberPatcher {
 
         if (cn.contains("ConfigEntity")) {
             StateStore.bindEntity(c);
+            logFields(c);
         }
         MainHook.log("已处理 " + cn + "，挂载 " + hooked + " 处");
+    }
+
+    /** ConfigEntity 一出现就把字段清单打出来（不需要 DUMP_ONLY） */
+    static void logFields(Class<?> c) {
+        Object probe = instantiate(c);
+        StringBuilder sb = new StringBuilder("ConfigEntity 字段:");
+        for (Class<?> k = c; k != null && k != Object.class; k = k.getSuperclass()) {
+            Field[] fs;
+            try {
+                fs = k.getDeclaredFields();
+            } catch (Throwable t) {
+                continue;
+            }
+            for (Field f : fs) {
+                if (Modifier.isStatic(f.getModifiers())) continue;
+                f.setAccessible(true);
+                sb.append("\n    ").append(f.getName()).append(" : ").append(f.getType().getSimpleName());
+                if (probe != null) {
+                    try {
+                        sb.append(" = ").append(f.get(probe));
+                    } catch (Throwable ignored) {
+                    }
+                }
+            }
+        }
+        MainHook.log(sb.toString());
     }
 
     private static String shortName(String cn) {

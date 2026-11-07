@@ -31,6 +31,9 @@ public class MainHook implements IXposedHookLoadPackage {
     /** true = 连 int 型 level/type/state 也强推（确认字段含义后再开） */
     static final boolean DEEP = false;
 
+    /** true = 把遇到的每个 com.cxincx.* 类名都打日志（找判定类用；日志量大，定位完可关） */
+    static final boolean LOG_CLASSES = true;
+
     @Override
     public void handleLoadPackage(LoadPackageParam lpparam) {
         if (!PKG.equals(lpparam.packageName)) return;

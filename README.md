@@ -5,17 +5,22 @@
 
 ## 它做了什么
 
+> **v1.1（按真机日志修正）**：实测 4.0.8 的会员状态**不在 ObjectBox**，而在 **SharedPreferences（`a_` 前缀，如 `a_end_time`）**，
+> 且 `io.objectbox.BoxStore` 全程未加载。因此 v1.1 把状态层改为「**SP 读改写 + 写改写 + getAll 注入**」，
+> 类匹配范围从 `com.cxincx.xxjz.z.` 放宽到整个 `com.cxincx`（强信号类才挂 hook，其余只登记类名）。
+
 | 层 | 做法 | 解决什么 |
 |---|---|---|
 | 类发现 | hook `ClassLoader.loadClass` / `Class.forName` | 目标被百度加固，自有类运行时才解密加载，必须"出现即挂" |
-| 判定层 | `com.cxincx.xxjz.z.*` 里所有返回 `boolean` 的方法 → `true` | 各功能门禁、`VipDialog` 前置判断 |
+| 判定层 | 强信号类（vip/secret/license/activ/pay/order/ConfigEntity）里返回 `boolean` 的方法 → `true`（`hasExpired`/`isInvalid` 类反向压 `false`） | 各功能门禁、`VipDialog` 前置判断、密钥校验 |
 | 到期层 | 同范围内返回 `long` 且值像时间戳 → `9999-12-31` | 到期判定、剩余天数 |
-| 状态层 | 反射改写 ObjectBox 的 `ConfigEntity`：激活位 `true`、到期 `9999-12-31` | 本地持久化状态（重启不回退） |
+| 状态层（v1.1） | **SP 三处同时按**：`getLong/getBoolean` 返回值、`Editor.putLong/putBoolean` 写入值、`getAll()` 返回的整张表 | 持久化状态，**写入就改成永久 → 重启不回退** |
+| 状态层（ObjectBox） | 反射改写 `ConfigEntity` | 若后续版本改成 ObjectBox 存储可自动接管 |
 | 弹窗层 | `VipDialog.show*` 直接吞掉 | 试用用尽弹窗 |
-| 兜底层 | `SharedPreferences.getBoolean/getLong` 对 vip/active/expire 键给永久值 | 万一状态存在 SP |
 | 刷新层 | 首个 `onResume` + `VipActivity` 进入时改写并 `recreate()` 一次 | 界面立刻显示「已激活 / 永久」 |
+| 观测层（v1.1） | `SP getAll()` 打一次完整键值表；12 秒后打印 `com.cxincx.*` 类名清单 | 定位真正的状态键 / 判定类 |
 
-关键点：**状态 + 判定 + 到期必须三层同时按**。只改库会被 App 的再校验覆盖，只 hook 判定则重启失效。
+关键点：**状态 + 判定 + 到期必须同时按**。只改读会被 App 写回覆盖，只 hook 判定则重启失效。
 
 ## 目录
 
@@ -104,13 +109,43 @@ XXJZ-UNLOCK: bool VipActivity#isVip false->true
 XXJZ-UNLOCK: VipActivity 已刷新一次
 ```
 
+## v1.1 的新日志怎么看（真机实测版）
+
+v1.1 会额外打三类行，用来确定"状态到底存在哪、判定到底在哪个类"：
+
+```
+# ① 整张 SP 表（一次性）—— 看激活状态由哪几个键组成
+XXJZ-UNLOCK: SP schema（12 个键）:
+    a_end_time = 1794052999687
+    a_type = 2
+    a_secret = ...
+# ② 写入路径 —— App 自己写状态时会被我们改成永久（这条最关键，说明已落盘）
+XXJZ-UNLOCK: sp.putLong a_end_time 1794052999687
+XXJZ-UNLOCK: sp.putLong a_end_time ->FOREVER
+# ③ 类清单（12 秒后一次性）—— 找真正的会员判定类（如 *SecretManager* / *VipManager*）
+XXJZ-UNLOCK: census 87 个类:
+    com.cxincx.xxjz.z.secret.SecretManager
+    com.cxincx.xxjz.z.ui.VipActivity
+    ...
+```
+
+拿到 ①②③ 后按需微调：
+
+| 观察 | 动作 |
+|---|---|
+| `a_end_time` 之外还有 `a_type` 这类 int | 开 `DEEP`（推到 4=永久） |
+| 有 `a_secret` / `a_key` 这类字符串且为空 | 说明还要求"密钥字符串"，判定多半是 `verify(String)` → 把该类的包名加进 `ClassWatcher.PATCH_SIGNALS`，boolean hook 会自动放行 |
+| `census` 里出现 `*SecretManager*` / `*VipManager*` / `*Activation*` | 把这几个词加进 `PATCH_SIGNALS`（或直接 `Vip` 全量匹配），重建即可 |
+| SP 里根本没有状态键 | 状态在文件里（`files/`），用 `adb shell su -c 'ls -lR /data/data/com.cxincx.xxjz'` 排查 |
+
 ## 参数（`MainHook.java`）
 
 | 常量 | 默认 | 说明 |
 |---|---|---|
 | `FOREVER` | `253402300799000L` | 9999-12-31 23:59:59 UTC；别用 `Long.MAX_VALUE`（部分金额/时间格式化会异常） |
-| `DUMP_ONLY` | `false` | `true` = 只打印结构，不改行为。**第一次必须先用它** |
+| `DUMP_ONLY` | `false` | `true` = 只打印结构，不改行为 |
 | `DEEP` | `false` | `true` = 连 `int` 型 level/type/state 也推到 4（确认含义后再开） |
+| `LOG_CLASSES` | `true` | 打印遇到的 `com.cxincx.*` 类名，定位完可关 |
 
 ## 排错
 
