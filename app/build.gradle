@@ -1,0 +1,42 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.xxjz.unlock'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.xxjz.unlock"
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            // 用 debug 签名，保证 assembleRelease 出来的 APK 直接能装
+            signingConfig signingConfigs.debug
+        }
+        debug {
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
+}
+
+dependencies {
+    // 经典 Xposed API（LSPosed 完全兼容，比新版 libxposed API 兼容性更广）
+    compileOnly 'de.robv.android.xposed:api:82'
+}

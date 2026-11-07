@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- LSPosed 会按这个列表预勾选作用域 -->
+    <string-array name="xposed_scope">
+        <item>com.cxincx.xxjz</item>
+    </string-array>
+</resources>

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="module_name">小星会员永久化</string>
+    <string name="module_desc">小星记账 4.0.8：把本地会员状态与判定改成「永久激活」（状态层 + 判定层 + 到期层三层兜底）</string>
+</resources>
